@@ -14,6 +14,7 @@
 char *FILE_TYPE(int t){ 
 	return t == 1 ? "DIR" : "FILE";
 }
+
 /*
  * 1. I need to define a right dim for inotify input buffer
  *    In this buffer, we're gonna  read triggered events on
@@ -40,6 +41,39 @@ void print_watched_dir(struct watched_dir *node){
 	}
 }
 
+void indexing_process(char *current_dir, struct watched_dir **head, int *tot_dirs){
+	struct dirent **namelist;
+	int num_files = 0;
+	int num_dirs = 1; // at least argv[1] must be present 
+       	num_files = scandir(current_dir, &namelist, NULL, alphasort);
+	
+	//char *root_path = (char *)malloc(PATH_MAX*sizeof(char));
+	//realpath(argv[1], root_path);
+	//strcat(root_path, "/");
+	struct stat sb;
+	printf("Start SCANNING %s dir\n", current_dir);
+	for(int i=0; i<num_files; i++){
+		if(strcmp(namelist[i]->d_name, "..") == 0 || strcmp(namelist[i]->d_name, ".") == 0)
+			continue;
+		char *rel_path = (char *)malloc(PATH_MAX*sizeof(char));
+		strcpy(rel_path, current_dir);
+		strcat(rel_path, strcat(namelist[i]->d_name, "/"));
+		int is_dir = IS_DIR(namelist[i]->d_type);
+		if(is_dir){
+			printf("%3d) %10s %s\n", num_dirs, rel_path, FILE_TYPE(is_dir));
+			print_watched_dir(*head);
+			push_watched_dir(head, rel_path);
+			
+			indexing_process(rel_path, head, tot_dirs);
+			print_watched_dir(*head);
+			num_dirs;
+		}
+
+	}
+	*tot_dirs += num_dirs;
+	printf("End SCANNING %s dir\n", current_dir);
+	
+}
 
 void display_inotify_event(struct inotify_event *i){
     printf("    wd =%2d; ", i->wd);
@@ -117,6 +151,8 @@ int main(int argc, char *argv[]){
 	realpath(argv[1], root_path);
 	strcat(root_path, "/");
 	struct stat sb;
+	indexing_process(root_path, &head, &num_dirs); 
+	/*
 	printf("Start SCANNING %s dir\n", argv[1]);
 	for(int i=0; i<num_files; i++){
 		char *rel_path = (char *)malloc(PATH_MAX*sizeof(char));
@@ -135,6 +171,8 @@ int main(int argc, char *argv[]){
 
 	}
 	printf("End SCANNING %s dir\n", argv[1]);
+	*/
+
 
        	/*
          * TODO: We need to manage scandir error: n < 0
