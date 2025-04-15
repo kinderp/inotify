@@ -6,102 +6,26 @@
 #include <sys/stat.h>    	/* stat() 		*/
 #include <limits.h>     	/* NAME_MAX, PATH_MAX	*/
 #include <dirent.h>     	/* scandir() 		*/
-
+#include <time.h>		/* sleep()		*/
 #include <errno.h>		/* strerror(errno)	*/
+
+#include "monitor.h"		/* display_inotify_event() */
+#include "print.h"		/* print_progress()	*/
+				/* print_logo()		*/
+#include "index.h"		/* index_process()	*/
 
 #define IS_DIR(x) x == 4 ? 1 : 0
 
-char *FILE_TYPE(int t){ 
-	return t == 1 ? "DIR" : "FILE";
-}
+char *LOGO_FILENAME = "logo.txt";
+char *LOGS_FILENAME = "logs.txt";
+
+FILE *LOGS = NULL;
 
 /*
  * 1. I need to define a right dim for inotify input buffer
  *    In this buffer, we're gonna  read triggered events on
  *    watched files/direcotories  
  */
-
-struct watched_dir {
-	char *name;
-	struct watched_dir *next;
-};
-
-void push_watched_dir(struct watched_dir **head, char *dir_name){
-	struct watched_dir *new_elem = (struct watched_dir *) malloc (sizeof(struct watched_dir));
-	new_elem->name = dir_name;
-	new_elem->next = *head;
-	*head = new_elem;
-	
-}
-
-void print_watched_dir(struct watched_dir *node){
-	while(node){
-		printf("%s\n", node->name);
-		node = node->next;
-	}
-}
-
-void indexing_process(char *current_dir, struct watched_dir **head, int *tot_dirs){
-	struct dirent **namelist;
-	int num_files = 0;
-	int num_dirs = 1; // at least argv[1] must be present 
-       	num_files = scandir(current_dir, &namelist, NULL, alphasort);
-	
-	//char *root_path = (char *)malloc(PATH_MAX*sizeof(char));
-	//realpath(argv[1], root_path);
-	//strcat(root_path, "/");
-	struct stat sb;
-	printf("Start SCANNING %s dir\n", current_dir);
-	for(int i=0; i<num_files; i++){
-		if(strcmp(namelist[i]->d_name, "..") == 0 || strcmp(namelist[i]->d_name, ".") == 0)
-			continue;
-		char *rel_path = (char *)malloc(PATH_MAX*sizeof(char));
-		strcpy(rel_path, current_dir);
-		strcat(rel_path, strcat(namelist[i]->d_name, "/"));
-		int is_dir = IS_DIR(namelist[i]->d_type);
-		if(is_dir){
-			printf("%3d) %10s %s\n", num_dirs, rel_path, FILE_TYPE(is_dir));
-			print_watched_dir(*head);
-			push_watched_dir(head, rel_path);
-			
-			indexing_process(rel_path, head, tot_dirs);
-			print_watched_dir(*head);
-			num_dirs;
-		}
-
-	}
-	*tot_dirs += num_dirs;
-	printf("End SCANNING %s dir\n", current_dir);
-	
-}
-
-void display_inotify_event(struct inotify_event *i){
-    printf("    wd =%2d; ", i->wd);
-    if (i->cookie > 0)
-        printf("cookie =%4d; ", i->cookie);
-
-    printf("mask = ");
-    if (i->mask & IN_ACCESS)        printf("IN_ACCESS ");
-    if (i->mask & IN_ATTRIB)        printf("IN_ATTRIB ");
-    if (i->mask & IN_CLOSE_NOWRITE) printf("IN_CLOSE_NOWRITE ");
-    if (i->mask & IN_CLOSE_WRITE)   printf("IN_CLOSE_WRITE ");
-    if (i->mask & IN_CREATE)        printf("IN_CREATE ");
-    if (i->mask & IN_DELETE)        printf("IN_DELETE ");
-    if (i->mask & IN_DELETE_SELF)   printf("IN_DELETE_SELF ");
-    if (i->mask & IN_IGNORED)       printf("IN_IGNORED ");
-    if (i->mask & IN_ISDIR)         printf("IN_ISDIR ");
-    if (i->mask & IN_MODIFY)        printf("IN_MODIFY ");
-    if (i->mask & IN_MOVE_SELF)     printf("IN_MOVE_SELF ");
-    if (i->mask & IN_MOVED_FROM)    printf("IN_MOVED_FROM ");
-    if (i->mask & IN_MOVED_TO)      printf("IN_MOVED_TO ");
-    if (i->mask & IN_OPEN)          printf("IN_OPEN ");
-    if (i->mask & IN_Q_OVERFLOW)    printf("IN_Q_OVERFLOW ");
-    if (i->mask & IN_UNMOUNT)       printf("IN_UNMOUNT ");
-    printf("\n");
-
-    if (i->len > 0)
-        printf("        name = %s\n", i->name);
-}
 
 #define BUF_LEN (10 * (sizeof(struct inotify_event) + NAME_MAX + 1))
 
@@ -112,6 +36,9 @@ int main(int argc, char *argv[]){
 		exit(1);
     	}	
 
+	print_logo();
+	 
+	LOGS = fopen(LOGS_FILENAME, "w");
 	/*
 	 * inotify_fd: it's a file descriptor and is an handle that is 
 	 *	       used to refer to the inotify instance in subseq
@@ -152,26 +79,6 @@ int main(int argc, char *argv[]){
 	strcat(root_path, "/");
 	struct stat sb;
 	indexing_process(root_path, &head, &num_dirs); 
-	/*
-	printf("Start SCANNING %s dir\n", argv[1]);
-	for(int i=0; i<num_files; i++){
-		char *rel_path = (char *)malloc(PATH_MAX*sizeof(char));
-		strcpy(rel_path, root_path);
-		strcat(rel_path, namelist[i]->d_name);
-		int is_dir = IS_DIR(namelist[i]->d_type);
-		printf("%3d) %10s %s\n", i, rel_path, FILE_TYPE(is_dir));
-		if(strcmp(namelist[i]->d_name, "..") == 0 || strcmp(namelist[i]->d_name, ".") == 0)
-			continue;
-		if(is_dir){
-			print_watched_dir(head);
-			push_watched_dir(&head, rel_path);
-			print_watched_dir(head);
-			num_dirs;
-		}
-
-	}
-	printf("End SCANNING %s dir\n", argv[1]);
-	*/
 
 
        	/*
@@ -239,5 +146,5 @@ int main(int argc, char *argv[]){
  			display_inotify_event(event);
     	}
   }
-      	
+  fclose(LOGS);      	
 }
