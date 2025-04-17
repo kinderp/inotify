@@ -6,13 +6,14 @@
 #include <sys/stat.h>    	/* stat() 		*/
 #include <limits.h>     	/* NAME_MAX, PATH_MAX	*/
 #include <dirent.h>     	/* scandir() 		*/
-#include <time.h>		/* sleep()		*/
+#include <time.h>		/* time()		*/
 #include <errno.h>		/* strerror(errno)	*/
 
 #include "monitor.h"		/* display_inotify_event() */
 #include "print.h"		/* print_progress()	*/
 				/* print_logo()		*/
 #include "index.h"		/* index_process()	*/
+#include "util.h"		/* get_timestamp()	*/
 
 #define IS_DIR(x) x == 4 ? 1 : 0
 
@@ -39,6 +40,10 @@ int main(int argc, char *argv[]){
 	print_logo();
 	 
 	LOGS = fopen(LOGS_FILENAME, "w");
+	if(LOGS == NULL){
+		printf("Can't open %s, quitting!", LOGS_FILENAME);
+		exit(1);
+	}
 	/*
 	 * inotify_fd: it's a file descriptor and is an handle that is 
 	 *	       used to refer to the inotify instance in subseq
@@ -71,15 +76,17 @@ int main(int argc, char *argv[]){
 	head->next = NULL;
 
 	int num_files = 0;
-	int num_dirs = 1; // at least argv[1] must be present 
+	int num_dirs = 0; 
        	num_files = scandir(argv[1], &namelist, NULL, alphasort);
 
 	char *root_path = (char *)malloc(PATH_MAX*sizeof(char));
 	realpath(argv[1], root_path);
 	strcat(root_path, "/");
 	struct stat sb;
-	indexing_process(root_path, &head, &num_dirs); 
-
+	time_t start = get_timestamp();
+	indexing_process(root_path, &head, &num_dirs);
+	time_t stop = get_timestamp(); 
+	printf("\n ** Indexing process took %ld sec(s)\n", stop - start);
 
        	/*
          * TODO: We need to manage scandir error: n < 0
@@ -118,11 +125,15 @@ int main(int argc, char *argv[]){
 	int watch_fd;
 	char *watched_names[num_dirs];
 	struct watched_dir *node = head;
+	printf(" ** N: %d dirs have been recognized in %s\n", num_dirs, argv[1]);
+	printf(" ** See %s for a complete list of recognized dirs\n", LOGS_FILENAME);
+	print_watched_dir(node);
+	printf(" ** Adding watches on recognized dirs\n");
 	while(node){
 		if ((watch_fd = inotify_add_watch(inotify_fd, node->name, event_mask)) < 0) {
                         printf("error adding watch for %s %s\n", node->name, strerror(errno));
       		} else {
-			printf("added %s to watch list on descriptor %d\n", node->name, watch_fd);
+			printf(" ** Added %s to watch list on descriptor %d\n", node->name, watch_fd);
                         /* Record the file we're watching on this watch descriptor */
                         /* There should be a check on overflow of the watchednames array */
 			watched_names[watch_fd] = (char *) malloc(strlen(node->name)*sizeof(char)+1);

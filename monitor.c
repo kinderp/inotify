@@ -19,6 +19,7 @@ void print_watched_dir(struct watched_dir *node){
                 fprintf(LOGS, "%s\n", node->name);
                 node = node->next;
         }
+	fflush(LOGS);
 }
 
 void display_inotify_event(struct inotify_event *i){
