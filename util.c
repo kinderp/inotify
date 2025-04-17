@@ -11,11 +11,4 @@ time_t get_timestamp(void){
 	return time(NULL);
 }
 
-char *get_datetime(void){
-	time_t t;
-     	time(&t);
-	char *datetime = ctime(&t);
-	return datetime;
-}
-
 #endif
