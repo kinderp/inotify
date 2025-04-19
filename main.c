@@ -8,7 +8,7 @@
 #include <dirent.h>     	/* scandir() 		*/
 #include <time.h>		/* time()		*/
 #include <errno.h>		/* strerror(errno)	*/
-
+#include <signal.h>
 #include "monitor.h"		/* display_inotify_event() */
 #include "print.h"		/* print_progress()	*/
 				/* print_logo()		*/
@@ -17,10 +17,18 @@
 
 #define IS_DIR(x) x == 4 ? 1 : 0
 
+#define EREPORT_DIM  3
+#define EREPORT_INC_DIM  2
+
+int EREPORT_DIM_REAL = EREPORT_DIM;
+
 char *LOGO_FILENAME = "logo.txt";
 char *LOGS_FILENAME = "logs.txt";
 
 FILE *LOGS = NULL;
+
+struct queue_event **EREPORT = NULL;
+char **TRIGGERED_NAMES = NULL;
 
 /*
  * 1. I need to define a right dim for inotify input buffer
@@ -30,7 +38,46 @@ FILE *LOGS = NULL;
 
 #define BUF_LEN (10 * (sizeof(struct inotify_event) + NAME_MAX + 1))
 
+
+volatile sig_atomic_t stop;
+
+void inthand(int signum) {
+    printf("CTRL-C");
+    stop = 1;
+}
+
+void init_ptr_char_v(int dim, int is_realloc){
+	if(is_realloc){
+		TRIGGERED_NAMES = (char **)realloc(TRIGGERED_NAMES, dim*sizeof(char *));
+		for(int j=is_realloc; j<dim; j++)
+			TRIGGERED_NAMES[j] = NULL;
+		return;
+	}
+				
+	TRIGGERED_NAMES = (char **)malloc(dim*sizeof(char *)); // path of the filenamesthe triggred an event
+	for(int i=0; i<dim; i++)
+		TRIGGERED_NAMES[i] = NULL;
+}
+
+int add_elem_in_ptr_char_v(char **head, char *elem, int dim){
+	int i;
+	for(i=0; head[i]!=NULL && i<dim; i++){
+		if(strcmp(head[i], elem)==0)
+			return i;
+	}
+	// if here we didn't find elem
+	if(i<dim && head[i] == NULL){
+		head[i] = elem;
+		return i;
+	}	
+	return -1; // no more space
+}
+
 int main(int argc, char *argv[]){
+
+	init_queues_system(EREPORT_DIM, 0);
+
+	signal(SIGINT, inthand);
 
 	if (argc < 2 || strcmp(argv[1], "--help") == 0){
         	printf("%s pathname...\n", argv[0]);
@@ -71,7 +118,7 @@ int main(int argc, char *argv[]){
     	}
 
 	struct dirent **namelist;
-	struct watched_dir *head = (struct watched_dir *) malloc(sizeof(struct watched_dir));
+	struct watched_dir *head = (struct watched_dir *)malloc(sizeof(struct watched_dir));
 	head->name = argv[1];
 	head->next = NULL;
 
@@ -119,11 +166,20 @@ int main(int argc, char *argv[]){
 	 * 	Description: File moved into watched directory
 	 * IN_MOVE:
 	 *	Description: Shorthand for IN_MOVED_FROM | IN_MOVED_TO
+	 * 
+	 * IN_CLOSE_WRITE:
+	 *	Description: File opened for writing was closed
+	 *	Action:
+	 *
+	 * IN_OPEN:
+	 *	Description: File was opened
+	 *	Action:
 	 */
 
-	uint32_t event_mask = IN_CREATE | IN_DELETE | IN_MODIFY | IN_MOVE;
+	uint32_t event_mask = IN_CREATE | IN_DELETE | IN_MODIFY | IN_MOVE | IN_CLOSE_WRITE;
 	int watch_fd;
-	char *watched_names[num_dirs];
+	char *watched_names[num_dirs]; // path of all the watche dirs 
+	init_ptr_char_v(EREPORT_DIM, 0); //init to NULL	
 	struct watched_dir *node = head;
 	printf(" ** N: %d dirs have been recognized in %s\n", num_dirs, argv[1]);
 	printf(" ** See %s for a complete list of recognized dirs\n", LOGS_FILENAME);
@@ -143,8 +199,9 @@ int main(int argc, char *argv[]){
 	}
 
 	char *p;
-	ssize_t n;	
- 	while(1) {
+	ssize_t n;
+	stop = 0;
+ 	while(1 && !stop) {
     		n = read(inotify_fd, input_buffer, BUF_LEN);
     		/* Loop over all events and report them. This is a little tricky
        		   because the event records are not of fixed length
@@ -152,10 +209,42 @@ int main(int argc, char *argv[]){
 		printf("Read %ld bytes from inotify fd\n", (long) n);
     		for (p = input_buffer; p < input_buffer + n;) {
       			event = (struct inotify_event *) p;
+			struct inotify_event *inode =(struct inotify_event *)malloc(sizeof(struct inotify_event));
+			copy_inotify_event(inode, event); // deep copy not swallow copy
       			p += sizeof(struct inotify_event) + event->len;
       			/* Display the event */
  			display_inotify_event(event);
-    	}
-  }
-  fclose(LOGS);      	
+			/* Enqueue the event */
+			char *path_dir = watched_names[event->wd]; // it already has ending /
+			char *filename = event->name;
+			char *path_filename = (char *)malloc(sizeof(char)*(strlen(path_dir)+event->len));
+			snprintf(path_filename, (sizeof(char)*(strlen(path_dir)+event->len)), "%s%s", path_dir, filename);
+			int index = add_elem_in_ptr_char_v(TRIGGERED_NAMES, path_filename, EREPORT_DIM);
+			/* 
+			 * TODO: if index == -1 no more space...realloc
+			 *       We need to realloc both
+			 *	 EREPORT[] and TRIGGERED_NAMES[]
+			 */
+			if(index == -1){
+				EREPORT_DIM_REAL += EREPORT_INC_DIM;
+				
+				//EREPORT = (struct queue_event **)realloc(EREPORT, EREPORT_DIM_REAL*sizeof(struct queue_event *)); 
+				//triggered_names = (char **)realloc(triggered_names, EREPORT_DIM_REAL*sizeof(char *));
+				int i;
+				for(i=0; EREPORT[i]; i++);
+				init_ptr_char_v(EREPORT_DIM_REAL, i); //init to NULL	
+				init_queues_system(EREPORT_DIM_REAL, i);
+			}
+			if(EREPORT[index]==NULL)
+				EREPORT[index] = create_queue();
+			enqueue(EREPORT[index], inode);
+			print_queue(EREPORT[index], path_filename, index);	
+		}
+	}
+   
+  	for(int i=1; i<=num_dirs; i++)
+		free(watched_names[i]);
+  	free_watched_dir(head); 
+  	free(root_path);
+  	fclose(LOGS);      	
 }
