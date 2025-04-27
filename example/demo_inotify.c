@@ -14,7 +14,6 @@
 #include<unistd.h>
 #include <sys/inotify.h>
 #include <limits.h>
-//#include "tlpi_hdr.h"
 
 static void             /* Display information from inotify_event structure */
 displayInotifyEvent(struct inotify_event *i)
