@@ -5,6 +5,7 @@
 
 char *FILE_TYPE(int t);
 time_t get_timestamp(void);
-void init_ptr_char_v(int dim, int is_realloc);
-int add_elem_in_ptr_char_v(char **head, char *elem, int dim);
+void print_triggered_names(int dim);
+void init_triggered_names(int dim, int is_realloc);
+int add_elem_in_triggered_names(char *elem, int dim);
 #endif

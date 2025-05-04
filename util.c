@@ -1,11 +1,13 @@
 #ifndef __UTIL_H__
 #define __UTIL_H__
 
+#include<stdio.h>
 #include<time.h>
 #include<string.h>
 #include<stdlib.h>
 
 extern char **TRIGGERED_NAMES;
+extern FILE *LOGS;
 
 char *FILE_TYPE(int t){
         return t == 1 ? "DIR" : "FILE";
@@ -15,7 +17,14 @@ time_t get_timestamp(void){
 	return time(NULL);
 }
 
-void init_ptr_char_v(int dim, int is_realloc){
+void print_triggered_names(int dim){
+	fprintf(LOGS, "=========TRIGGERED-NAMES=============\n");
+	for(int i=0; i<dim; i++)
+		fprintf(LOGS, "%d -> %s\n", i, TRIGGERED_NAMES[i]);
+	fprintf(LOGS, "=====================================\n");
+}
+
+void init_triggered_names(int dim, int is_realloc){
         if(is_realloc){
                 TRIGGERED_NAMES = (char **)realloc(TRIGGERED_NAMES, dim*sizeof(char *));
                 for(int j=is_realloc; j<dim; j++)
@@ -28,15 +37,15 @@ void init_ptr_char_v(int dim, int is_realloc){
                 TRIGGERED_NAMES[i] = NULL;
 }
 
-int add_elem_in_ptr_char_v(char **head, char *elem, int dim){
+int add_elem_in_triggered_names(char *elem, int dim){
         int i;
-        for(i=0; head[i]!=NULL && i<dim; i++){
-                if(strcmp(head[i], elem)==0)
+        for(i=0; i<dim && TRIGGERED_NAMES[i]!=NULL; i++){
+                if(strcmp(TRIGGERED_NAMES[i], elem)==0)
                         return i;
         }
         // if here we didn't find elem
-        if(i<dim && head[i] == NULL){
-                head[i] = elem;
+        if(i<dim && TRIGGERED_NAMES[i] == NULL){
+                TRIGGERED_NAMES[i] = elem;
                 return i;
         }
         return -1; // no more space
