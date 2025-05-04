@@ -70,9 +70,10 @@ void display_inotify_event(struct inotify_event *i){
 }
 
 // queue
-struct queue_event* create_queue(void){
+struct queue_event* create_queue(char *path){
 	struct queue_event *q = (struct queue_event *)malloc(sizeof(struct queue_event));
 	q->head = q->tail = NULL;
+	q->path = path;
 	return q;
 }
 
@@ -93,12 +94,10 @@ void enqueue(struct queue_event *q, struct inotify_event *i){
 	if(queue_is_empty(q)){
 		q->tail = node;
 		q->head = node;
-		print_queue(q, i->name, -1);
 		return;
 	}
 	q->tail->next = node;
 	q->tail = node;
-	print_queue(q, i->name, -1);
 }
 
 void dequeue(struct queue_event *q){
@@ -111,11 +110,11 @@ void dequeue(struct queue_event *q){
 	//TODO: print_queue() here!	
 }
 
-void print_queue(struct queue_event *q, char *queue_name, int queue_num){
+void print_queue(struct queue_event *q, int queue_num){
 	if(queue_is_empty(q))
 		return;
 	fprintf(LOGS, "==========PRINT_QUEUE==========\n");
-	fprintf(LOGS, "Queue Name: %s, Queue Number: %d\n", queue_name, queue_num);
+	fprintf(LOGS, "Queue Name: %s, Queue Number: %d\n", q->path, queue_num);
 	fprintf(LOGS, "Head: %p, Tail: %p\n", q->head, q->tail);
 	struct node_ievent *node = q->head;
 	while(node != NULL){
@@ -137,7 +136,7 @@ void print_queue(struct queue_event *q, char *queue_name, int queue_num){
     		if (node->e->mask & IN_Q_OVERFLOW)    event = "IN_Q_OVERFLOW ";
     		if (node->e->mask & IN_UNMOUNT)       event = "IN_UNMOUNT ";
  
-		fprintf(LOGS, "node=%14p noer->next=%16p node->e=%p wd=%2d name=%s mask=%d event=%17s cookie=%4d\n", node, node->next, node->e, node->e->wd, node->e->name, node->e->mask, event, node->e->cookie);
+		fprintf(LOGS, "node=%14p node->next=%16p node->e=%p wd=%2d name=%s mask=%d event=%17s cookie=%4d\n", node, node->next, node->e, node->e->wd, node->e->name, node->e->mask, event, node->e->cookie);
 		fflush(LOGS);
 
 		node = node->next;

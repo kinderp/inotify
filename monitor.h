@@ -16,16 +16,17 @@ struct node_ievent {
 };
 
 struct queue_event {
+	char *path;
 	struct node_ievent *head;
 	struct node_ievent *tail;
 };
 
-struct queue_event* create_queue(void);
+struct queue_event* create_queue(char *path);
 struct node_ievent* new_node_ievent(struct inotify_event *i);
 int queue_is_empty(struct queue_event *q);
 void enqueue(struct queue_event *q, struct inotify_event *i);
 void dequeue(struct queue_event *q);
-void print_queue(struct queue_event* q, char *queue_name, int queue_num);
+void print_queue(struct queue_event* q, int queue_num);
 void copy_inotify_event(struct inotify_event *dst, const struct inotify_event *src);
 void display_inotify_event(struct inotify_event *i);
 void init_queues_system(int dim, int realloc);
