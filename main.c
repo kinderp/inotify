@@ -46,33 +46,6 @@ void inthand(int signum) {
     stop = 1;
 }
 
-void init_ptr_char_v(int dim, int is_realloc){
-	if(is_realloc){
-		TRIGGERED_NAMES = (char **)realloc(TRIGGERED_NAMES, dim*sizeof(char *));
-		for(int j=is_realloc; j<dim; j++)
-			TRIGGERED_NAMES[j] = NULL;
-		return;
-	}
-				
-	TRIGGERED_NAMES = (char **)malloc(dim*sizeof(char *)); // path of the filenamesthe triggred an event
-	for(int i=0; i<dim; i++)
-		TRIGGERED_NAMES[i] = NULL;
-}
-
-int add_elem_in_ptr_char_v(char **head, char *elem, int dim){
-	int i;
-	for(i=0; head[i]!=NULL && i<dim; i++){
-		if(strcmp(head[i], elem)==0)
-			return i;
-	}
-	// if here we didn't find elem
-	if(i<dim && head[i] == NULL){
-		head[i] = elem;
-		return i;
-	}	
-	return -1; // no more space
-}
-
 int main(int argc, char *argv[]){
 
 	init_queues_system(EREPORT_DIM, 0);
@@ -179,7 +152,7 @@ int main(int argc, char *argv[]){
 	uint32_t event_mask = IN_CREATE | IN_DELETE | IN_MODIFY | IN_MOVE | IN_CLOSE_WRITE;
 	int watch_fd;
 	char *watched_names[num_dirs]; // path of all the watche dirs 
-	init_ptr_char_v(EREPORT_DIM, 0); //init to NULL	
+	init_triggered_names(EREPORT_DIM, 0); //init to NULL	
 	struct watched_dir *node = head;
 	printf(" ** N: %d dirs have been recognized in %s\n", num_dirs, argv[1]);
 	printf(" ** See %s for a complete list of recognized dirs\n", LOGS_FILENAME);
@@ -209,36 +182,50 @@ int main(int argc, char *argv[]){
 		printf("Read %ld bytes from inotify fd\n", (long) n);
     		for (p = input_buffer; p < input_buffer + n;) {
       			event = (struct inotify_event *) p;
-			struct inotify_event *inode =(struct inotify_event *)malloc(sizeof(struct inotify_event));
+			struct inotify_event *inode =(struct inotify_event *)malloc(sizeof(struct inotify_event)+sizeof(char)*event->len);
 			copy_inotify_event(inode, event); // deep copy not swallow copy
       			p += sizeof(struct inotify_event) + event->len;
       			/* Display the event */
  			display_inotify_event(event);
 			/* Enqueue the event */
 			char *path_dir = watched_names[event->wd]; // it already has ending /
-			char *filename = event->name;
-			char *path_filename = (char *)malloc(sizeof(char)*(strlen(path_dir)+event->len));
-			snprintf(path_filename, (sizeof(char)*(strlen(path_dir)+event->len)), "%s%s", path_dir, filename);
-			int index = add_elem_in_ptr_char_v(TRIGGERED_NAMES, path_filename, EREPORT_DIM);
+			//char *filename = event->name;
+			//char *path_filename = (char *)malloc(sizeof(char)*(strlen(path_dir)+event->len)+1);
+			char *path_filename = (char *)malloc(sizeof(char)*PATH_MAX);
+			//char *path_filename = (char *)malloc(sizeof(char)*(strlen(path_dir)+event->len)+1);
+			printf("path_dir=%ld event->len=%d path_filename=%ld\n", strlen(path_dir), event->len, sizeof(path_filename));
+			int written_byte = snprintf(path_filename, sizeof(char)*(PATH_MAX), "%s%s", path_dir, event->name);
+			printf("written_byte=%d\n", written_byte);
+			int index = add_elem_in_triggered_names(path_filename, EREPORT_DIM_REAL);
+			printf("INDEX--->%d\n", index);
 			/* 
 			 * TODO: if index == -1 no more space...realloc
 			 *       We need to realloc both
 			 *	 EREPORT[] and TRIGGERED_NAMES[]
 			 */
 			if(index == -1){
+				/*
+				 * if index == -1 no more space in TRIGGERED_NAMES
+				 * we need to increase dim of EREPORT_INC_DIM unit
+				 * init to null all new elements and the try to re
+				 * add that elem that caused buffer overflow.
+				 */
 				EREPORT_DIM_REAL += EREPORT_INC_DIM;
 				
 				//EREPORT = (struct queue_event **)realloc(EREPORT, EREPORT_DIM_REAL*sizeof(struct queue_event *)); 
 				//triggered_names = (char **)realloc(triggered_names, EREPORT_DIM_REAL*sizeof(char *));
-				int i;
-				for(i=0; EREPORT[i]; i++);
-				init_ptr_char_v(EREPORT_DIM_REAL, i); //init to NULL	
-				init_queues_system(EREPORT_DIM_REAL, i);
+				//int i;
+				//for(i=0; EREPORT[i]; i++);
+				//printf("i=%d EREPORT_DIM_REAL=%d\n", , EREPORT_DIM_REAL);
+				init_triggered_names(EREPORT_DIM_REAL, EREPORT_DIM_REAL-EREPORT_INC_DIM); //init to NULL	
+				init_queues_system(EREPORT_DIM_REAL, EREPORT_DIM_REAL-EREPORT_INC_DIM);
+				index = add_elem_in_triggered_names(path_filename, EREPORT_DIM_REAL);
 			}
+			print_triggered_names(EREPORT_DIM_REAL);
 			if(EREPORT[index]==NULL)
-				EREPORT[index] = create_queue();
+				EREPORT[index] = create_queue(path_filename);
 			enqueue(EREPORT[index], inode);
-			print_queue(EREPORT[index], path_filename, index);	
+			print_queue(EREPORT[index], index);	
 		}
 	}
    
