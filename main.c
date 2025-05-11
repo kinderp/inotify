@@ -182,6 +182,10 @@ int main(int argc, char *argv[]){
 		printf("Read %ld bytes from inotify fd\n", (long) n);
     		for (p = input_buffer; p < input_buffer + n;) {
       			event = (struct inotify_event *) p;
+			/* FAM: Flexible Array Member
+			 * we need to alloc memory in the below way because the last item  in 
+			 * struct inotify_event (char *name) is a FAM (flexible array member)
+			 */
 			struct inotify_event *inode =(struct inotify_event *)malloc(sizeof(struct inotify_event)+sizeof(char)*event->len);
 			copy_inotify_event(inode, event); // deep copy not swallow copy
       			p += sizeof(struct inotify_event) + event->len;
